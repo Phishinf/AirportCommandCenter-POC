@@ -166,7 +166,7 @@ if [ "$MIGRATED" = "0" ]; then
   echo "  Seeding database..."
   (cd apps/api-gateway && DATABASE_URL="$DB_URL" \
     npx ts-node --compiler-options '{"module":"commonjs","esModuleInterop":true}' \
-    ../../libs/database/src/prisma/seed.ts 2>&1)
+    src/seed.ts 2>&1)
   print_ok "Database seeded (users, terminals, zones)"
 else
   print_ok "Database already migrated — skipping"
