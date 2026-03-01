@@ -151,14 +151,22 @@ MIGRATED=$(docker exec nexus-postgres psql -U ${POSTGRES_USER:-nexus} -d ${POSTG
 if [ "$MIGRATED" = "0" ]; then
   echo "  Running Prisma migrations..."
   (cd apps/api-gateway && DATABASE_URL="$DB_URL" \
-    npx prisma migrate dev --schema "$SCHEMA_PATH" --name init --skip-generate 2>&1 | tail -3)
-  print_ok "Prisma migrations applied"
+    npx prisma migrate deploy --schema "$SCHEMA_PATH" 2>&1 | tail -5)
+
+  # If no migrations folder yet, push the schema directly
+  (cd apps/api-gateway && DATABASE_URL="$DB_URL" \
+    npx prisma db push --schema "$SCHEMA_PATH" --accept-data-loss 2>&1 | tail -3)
+  print_ok "Prisma schema applied"
+
+  # Generate Prisma client
+  (cd apps/api-gateway && DATABASE_URL="$DB_URL" \
+    npx prisma generate --schema "$SCHEMA_PATH" 2>&1 | tail -2)
+  print_ok "Prisma client generated"
 
   echo "  Seeding database..."
   (cd apps/api-gateway && DATABASE_URL="$DB_URL" \
-    npx ts-node --project tsconfig.json \
-    -e "require('tsconfig-paths/register'); require('../../libs/database/src/prisma/seed')" 2>&1 || \
-    DATABASE_URL="$DB_URL" npx prisma db seed --schema "$SCHEMA_PATH" 2>&1 | tail -5)
+    npx ts-node --compiler-options '{"module":"commonjs","esModuleInterop":true}' \
+    ../../libs/database/src/prisma/seed.ts 2>&1)
   print_ok "Database seeded (users, terminals, zones)"
 else
   print_ok "Database already migrated — skipping"

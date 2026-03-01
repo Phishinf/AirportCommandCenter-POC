@@ -37,7 +37,13 @@
     "@types/node": "^22.5.0",
     "@types/passport-jwt": "^4.0.1",
     "@types/uuid": "^10.0.0",
+    "prisma": "^5.19.0",
+    "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "~5.5.0"
+  },
+  "prisma": {
+    "schema": "../../libs/database/src/prisma/schema.prisma",
+    "seed": "ts-node --compiler-options {\"module\":\"commonjs\",\"esModuleInterop\":true} ../../libs/database/src/prisma/seed.ts"
   }
 }
