@@ -10,13 +10,13 @@ Nexus uses a **Multi-Agent System (MAS)** where each agent is a specialised serv
 
 ```
 ┌─────────────┐    events.flow    ┌──────────────┐
-│  INGESTOR   │ ─────────────────► │   PROPHET    │
-│   AGENT     │                    │   AGENT      │
-└─────────────┘                    └──────┬───────┘
+│  INGESTOR   │ ─────────────────►│   PROPHET    │
+│   AGENT     │                   │   AGENT      │
+└─────────────┘                   └──────┬───────┘
       │                                   │ threshold breach
       │ events.flow              events.threshold
       ▼                                   │
-┌─────────────┐    events.anomaly ┌───────▼──────┐
+┌─────────────┐    events.anomaly  ┌───────▼──────┐
 │  SENTINEL   │ ─────────────────► │  DISPATCHER  │
 │   AGENT     │                    │   AGENT      │
 └─────────────┘                    └──────┬───────┘
