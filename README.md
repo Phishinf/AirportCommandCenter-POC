@@ -42,20 +42,20 @@ Nexus is structured as a **three-tier, event-driven microservices monorepo**.
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  EDGE TIER  (Airport Sensor Network)                            │
-│  Wi-Fi APs · XOVIS Sensors · Ipsotek Cameras · AODB · FIDS     │
+│  Wi-Fi APs · XOVIS Sensors · Ipsotek Cameras · AODB · FIDS      │
 └───────────────────────────┬─────────────────────────────────────┘
                             │  Kafka topics: raw.*
 ┌───────────────────────────▼─────────────────────────────────────┐
 │  PROCESSING TIER  (Docker / On-Prem)                            │
 │                                                                 │
-│  ┌──────────────────┐  ┌──────────────────┐                    │
+│  ┌──────────────────┐  ┌──────────────────┐                     │
 │  │ Ingestor Service │  │ Analytics Engine  │                    │
 │  │ (port 4001)      │  │ (port 4002)       │                    │
-│  │                  │  │                  │                    │
+│  │                  │  │                  │                     │
 │  │ • Kafka consumer │  │ • Sentinel Agent  │                    │
 │  │ • Data normalise │  │ • Prophet Agent   │                    │
 │  │ • TimescaleDB wr │  │ • Dispatcher Agent│                    │
-│  └──────────────────┘  └──────────────────┘                    │
+│  └──────────────────┘  └──────────────────┘                     │
 │                                                                 │
 │  ┌──────────────────┐  ┌──────────────────────────────────────┐ │
 │  │ Notification Svc │  │  Infrastructure                      │ │
@@ -69,7 +69,7 @@ Nexus is structured as a **three-tier, event-driven microservices monorepo**.
 ┌───────────────────────────▼─────────────────────────────────────┐
 │  PRESENTATION TIER                                              │
 │                                                                 │
-│  API Gateway (NestJS :4000)   ←→   Frontend POC (Vite :3000)  │
+│  API Gateway (NestJS :4000)   ←→   Frontend POC (Vite :3000)    │
 │  JWT auth · RBAC · Socket.io                                    │
 │  Supabase (PostgreSQL) — users, zones, alerts, audit logs       │
 └─────────────────────────────────────────────────────────────────┘
