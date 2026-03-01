@@ -1,14 +1,15 @@
 -- Nexus Aviation Suite — PostgreSQL initialisation
--- Runs once on first container start (docker-entrypoint-initdb.d)
--- Fixes PostgreSQL 15+ default privilege changes on the public schema
+-- Runs once on first container start via docker-entrypoint-initdb.d
+-- Executed as the postgres superuser
 
--- Grant full access on the database
+-- Create the nexus app user
+CREATE USER nexus WITH PASSWORD 'nexus_secret';
+
+-- Grant database access
 GRANT ALL PRIVILEGES ON DATABASE nexus TO nexus;
 
--- Grant schema-level privileges (required in PostgreSQL 15+)
+-- Fix PostgreSQL 15+ public schema privilege changes
 GRANT ALL ON SCHEMA public TO nexus;
 ALTER SCHEMA public OWNER TO nexus;
-
--- Ensure future tables/sequences are accessible
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO nexus;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO nexus;

@@ -98,15 +98,7 @@ docker compose up -d postgres timescaledb neo4j redis zookeeper kafka
 
 # Wait for each service
 wait_for_service "PostgreSQL" \
-  "docker exec nexus-postgres pg_isready -U ${POSTGRES_USER:-nexus}"
-
-# Fix PostgreSQL 15+ public schema privileges (safe to run on every startup)
-docker exec nexus-postgres psql \
-  -U "${POSTGRES_USER:-nexus}" \
-  -d "${POSTGRES_DB:-nexus}" \
-  -c "GRANT ALL ON SCHEMA public TO ${POSTGRES_USER:-nexus}; ALTER SCHEMA public OWNER TO ${POSTGRES_USER:-nexus};" \
-  &>/dev/null || true
-print_ok "PostgreSQL schema privileges verified"
+  "docker exec nexus-postgres pg_isready -U postgres"
 
 wait_for_service "TimescaleDB" \
   "docker exec nexus-timescale pg_isready -U ${TIMESCALE_USER:-nexus_ts}"
@@ -161,7 +153,8 @@ install_deps "apps/ingestor-service"  "Ingestor Service"
 
 print_step "5/7" "Running database migrations & seed"
 
-DB_URL="postgresql://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_secret}@localhost:5432/${POSTGRES_DB:-nexus}"
+# Use postgres superuser — guaranteed full access, no permission issues
+DB_URL="postgresql://postgres:${POSTGRES_ROOT_PASSWORD:-postgres_root}@localhost:5432/${POSTGRES_DB:-nexus}"
 SCHEMA_PATH="../../libs/database/src/prisma/schema.prisma"
 
 # Use the LOCAL Prisma binary — never the global one (avoids Prisma 7 conflicts)
@@ -169,7 +162,7 @@ PRISMA="./node_modules/.bin/prisma"
 TS_NODE="./node_modules/.bin/ts-node"
 
 # Check if already migrated
-MIGRATED=$(docker exec nexus-postgres psql -U ${POSTGRES_USER:-nexus} -d ${POSTGRES_DB:-nexus} \
+MIGRATED=$(docker exec nexus-postgres psql -U postgres -d ${POSTGRES_DB:-nexus} \
   -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_name='users'" 2>/dev/null || echo "0")
 
 if [ "$MIGRATED" = "0" ]; then
