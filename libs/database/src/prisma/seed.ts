@@ -18,6 +18,19 @@ function hashPassword(password: string): string {
 async function main() {
   console.log('Seeding database...');
 
+  // ─── Terminals (must exist before users due to FK) ───────────────────────────
+  await prisma.terminal.upsert({
+    where: { id: 'T1' },
+    update: {},
+    create: { id: 'T1', name: 'Terminal 1', isActive: true },
+  });
+  await prisma.terminal.upsert({
+    where: { id: 'T2' },
+    update: {},
+    create: { id: 'T2', name: 'Terminal 2', isActive: true },
+  });
+  console.log('✓ Seeded 2 terminals');
+
   // ─── Users ──────────────────────────────────────────────────────────────────
   const users = [
     { email: 'admin@nexus.airport', role: UserRole.ADMIN, terminalId: null },
@@ -41,19 +54,6 @@ async function main() {
     });
   }
   console.log(`✓ Seeded ${users.length} users`);
-
-  // ─── Terminals ──────────────────────────────────────────────────────────────
-  await prisma.terminal.upsert({
-    where: { id: 'T1' },
-    update: {},
-    create: { id: 'T1', name: 'Terminal 1', isActive: true },
-  });
-  await prisma.terminal.upsert({
-    where: { id: 'T2' },
-    update: {},
-    create: { id: 'T2', name: 'Terminal 2', isActive: true },
-  });
-  console.log('✓ Seeded 2 terminals');
 
   // ─── Zones ──────────────────────────────────────────────────────────────────
   const zones = [

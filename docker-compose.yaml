@@ -2,23 +2,6 @@ version: "3.9"
 
 services:
   # ─── Databases ────────────────────────────────────────────────────
-  postgres:
-    image: postgres:16-alpine
-    container_name: nexus-postgres
-    environment:
-      POSTGRES_PASSWORD: nexus2024
-      POSTGRES_DB: nexus
-      POSTGRES_HOST_AUTH_METHOD: trust
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d nexus"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   timescaledb:
     image: timescale/timescaledb:latest-pg16
     container_name: nexus-timescale
@@ -26,13 +9,14 @@ services:
       POSTGRES_USER: ${TIMESCALE_USER:-nexus_ts}
       POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:-timescale_secret}
       POSTGRES_DB: ${TIMESCALE_DB:-nexus_timeseries}
+      POSTGRES_HOST_AUTH_METHOD: trust
     ports:
       - "5433:5432"
     volumes:
       - timescale_data:/var/lib/postgresql/data
       - ./libs/database/src/timescale/migrations:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${TIMESCALE_USER:-nexus_ts}"]
+      test: ["CMD-SHELL", "psql -U ${TIMESCALE_USER:-nexus_ts} -d ${TIMESCALE_DB:-nexus_timeseries} -c 'SELECT 1' -q"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -140,8 +124,6 @@ services:
       dockerfile: Dockerfile
     container_name: nexus-api-gateway
     depends_on:
-      postgres:
-        condition: service_healthy
       timescaledb:
         condition: service_healthy
       redis:
@@ -149,7 +131,7 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       PORT: 4000
-      DATABASE_URL: postgresql://postgres:nexus2024@postgres:5432/nexus
+      DATABASE_URL: ${DATABASE_URL}
       TIMESCALE_URL: postgresql://${TIMESCALE_USER:-nexus_ts}:${TIMESCALE_PASSWORD:-timescale_secret}@timescaledb:5432/${TIMESCALE_DB:-nexus_timeseries}
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
       NEO4J_URI: bolt://neo4j:7687
@@ -231,7 +213,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres_data:
   timescale_data:
   neo4j_data:
   neo4j_logs:

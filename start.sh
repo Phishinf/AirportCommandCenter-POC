@@ -93,15 +93,12 @@ export $(grep -v '^#' .env.local | grep -v '^$' | xargs) 2>/dev/null || true
 
 print_step "3/7" "Starting infrastructure (Docker)"
 
-echo "  Starting: PostgreSQL, TimescaleDB, Neo4j, Redis, Kafka..."
-docker compose up -d postgres timescaledb neo4j redis zookeeper kafka
+echo "  Starting: TimescaleDB, Neo4j, Redis, Kafka..."
+docker compose up -d timescaledb neo4j redis zookeeper kafka
 
 # Wait for each service
-wait_for_service "PostgreSQL" \
-  "docker exec nexus-postgres psql -U postgres -d nexus -c 'SELECT 1' -q"
-
 wait_for_service "TimescaleDB" \
-  "docker exec nexus-timescale pg_isready -U ${TIMESCALE_USER:-nexus_ts}"
+  "docker exec nexus-timescale psql -U ${TIMESCALE_USER:-nexus_ts} -d ${TIMESCALE_DB:-nexus_timeseries} -c 'SELECT 1' -q"
 
 wait_for_service "Redis" \
   "docker exec nexus-redis redis-cli -a ${REDIS_PASSWORD:-redis_secret} ping"
@@ -153,43 +150,124 @@ install_deps "apps/ingestor-service"  "Ingestor Service"
 
 print_step "5/7" "Running database migrations & seed"
 
-# Use postgres superuser — guaranteed full access, no permission issues
-# Password hardcoded to match docker-compose.yaml (not read from .env.local to avoid conflicts)
-DB_URL="postgresql://postgres:nexus2024@localhost:5432/nexus"
+# DATABASE_URL is loaded from .env.local above (Supabase remote connection string)
+TIMESCALE_URL="postgresql://nexus_ts:timescale_secret@localhost:5433/nexus_timeseries"
 SCHEMA_PATH="../../libs/database/src/prisma/schema.prisma"
 
 # Use the LOCAL Prisma binary — never the global one (avoids Prisma 7 conflicts)
 PRISMA="./node_modules/.bin/prisma"
 TS_NODE="./node_modules/.bin/ts-node"
 
-# Check if already migrated
-MIGRATED=$(docker exec nexus-postgres psql -U postgres -d ${POSTGRES_DB:-nexus} \
-  -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_name='users'" 2>/dev/null || echo "0")
+# Check if already migrated (psql connects directly to Supabase)
+MIGRATED=$(psql "$DATABASE_URL" -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_name='users'" 2>/dev/null || echo "0")
 
 if [ "$MIGRATED" = "0" ]; then
   # 1. Generate Prisma client FIRST (creates UserRole, ZoneType enums in node_modules)
   echo "  Generating Prisma client..."
-  (cd apps/api-gateway && DATABASE_URL="$DB_URL" \
+  (cd apps/api-gateway && DATABASE_URL="$DATABASE_URL" \
     $PRISMA generate --schema "$SCHEMA_PATH")
   print_ok "Prisma client generated"
 
-  # 2. Generate SQL from schema (no DB connection needed) then apply INSIDE the container
-  #    This bypasses macOS Docker Desktop host→localhost networking issues entirely
-  echo "  Generating schema SQL..."
-  (cd apps/api-gateway && $PRISMA migrate diff \
-    --from-empty \
-    --to-schema-datamodel "$SCHEMA_PATH" \
-    --script > /tmp/nexus-schema.sql 2>/dev/null)
-
-  echo "  Applying schema inside container..."
-  docker exec -i nexus-postgres psql -U postgres -d nexus < /tmp/nexus-schema.sql
+  # 2. Push schema directly to Supabase (no intermediate SQL file needed)
+  echo "  Pushing schema to Supabase..."
+  (cd apps/api-gateway && DATABASE_URL="$DATABASE_URL" \
+    $PRISMA db push --schema "$SCHEMA_PATH")
   print_ok "Schema applied"
 
-  # 3. Seed with initial data
+  # 3. Seed with initial data — pure SQL inside the container (no Prisma Client, no host networking)
   echo "  Seeding database..."
-  (cd apps/api-gateway && DATABASE_URL="$DB_URL" \
-    $TS_NODE --compiler-options '{"module":"commonjs","esModuleInterop":true}' \
-    src/seed.ts)
+
+  # Compute SHA-256 password hash using Node.js (same algorithm as seed.ts)
+  PW_HASH=$(node -e "const c=require('crypto');process.stdout.write(c.createHash('sha256').update('nexus2024!').digest('hex'))")
+
+  psql "$DATABASE_URL" << SEED_SQL
+-- Terminals
+INSERT INTO terminals (id, name, "isActive") VALUES
+  ('T1', 'Terminal 1', true),
+  ('T2', 'Terminal 2', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- Users
+INSERT INTO users (id, email, "passwordHash", role, "terminalId", "isActive", "createdAt", "updatedAt") VALUES
+  (gen_random_uuid(), 'admin@nexus.airport',    '$PW_HASH', 'ADMIN'::"UserRole",      NULL, true, NOW(), NOW()),
+  (gen_random_uuid(), 'ops@nexus.airport',       '$PW_HASH', 'OPERATIONS'::"UserRole", NULL, true, NOW(), NOW()),
+  (gen_random_uuid(), 'security@nexus.airport',  '$PW_HASH', 'SECURITY'::"UserRole",   'T1', true, NOW(), NOW()),
+  (gen_random_uuid(), 'terminal@nexus.airport',  '$PW_HASH', 'TERMINAL'::"UserRole",   'T1', true, NOW(), NOW()),
+  (gen_random_uuid(), 'airline@nexus.airport',   '$PW_HASH', 'AIRLINE'::"UserRole",    NULL, true, NOW(), NOW())
+ON CONFLICT (email) DO NOTHING;
+
+-- Zones
+INSERT INTO zones (id, "terminalId", name, type, "capacityMax", "alertThresholdPct") VALUES
+  ('T1_SECURITY_LANE_1',          'T1', 'Security Lane 1',        'SECURITY_LANE'::"ZoneType",   60,  80),
+  ('T1_SECURITY_LANE_2',          'T1', 'Security Lane 2',        'SECURITY_LANE'::"ZoneType",   60,  80),
+  ('T1_SECURITY_LANE_3',          'T1', 'Security Lane 3',        'SECURITY_LANE'::"ZoneType",   60,  80),
+  ('T1_IMMIGRATION',              'T1', 'Immigration T1',          'IMMIGRATION'::"ZoneType",     80,  75),
+  ('T1_CHECKIN_A',                'T1', 'Check-in Zone A',         'CHECK_IN'::"ZoneType",       200,  70),
+  ('T1_CHECKIN_B',                'T1', 'Check-in Zone B',         'CHECK_IN'::"ZoneType",       180,  70),
+  ('T1_RETAIL_PLAZA',             'T1', 'Retail Plaza T1',         'RETAIL'::"ZoneType",         300,  85),
+  ('T1_GATE_A05',                 'T1', 'Gate A05',                'BOARDING_GATE'::"ZoneType",   80,  90),
+  ('T1_GATE_A08',                 'T1', 'Gate A08',                'BOARDING_GATE'::"ZoneType",   80,  90),
+  ('T1_GATE_A12',                 'T1', 'Gate A12',                'BOARDING_GATE'::"ZoneType",  100,  90),
+  ('T1_GATE_B03',                 'T1', 'Gate B03',                'BOARDING_GATE'::"ZoneType",   80,  90),
+  ('T1_GATE_B08',                 'T1', 'Gate B08',                'BOARDING_GATE'::"ZoneType",  120,  90),
+  ('T1_CORRIDOR_POST_SECURITY',   'T1', 'Post-Security Corridor',  'CORRIDOR'::"ZoneType",       150,  80),
+  ('T1_CORRIDOR_PIER_A',          'T1', 'Pier A Corridor',         'CORRIDOR'::"ZoneType",       100,  80),
+  ('T1_CORRIDOR_PIER_B',          'T1', 'Pier B Corridor',         'CORRIDOR'::"ZoneType",       100,  80),
+  ('T1_BAGGAGE_A',                'T1', 'Baggage Reclaim A',       'BAGGAGE_RECLAIM'::"ZoneType",100,  85),
+  ('T1_LANDSIDE',                 'T1', 'T1 Landside',             'LANDSIDE'::"ZoneType",       400,  70),
+  ('T2_CHECKIN_B',                'T2', 'Check-in Zone B',         'CHECK_IN'::"ZoneType",       160,  70),
+  ('T2_SECURITY_LANE_1',          'T2', 'Security Lane 1',         'SECURITY_LANE'::"ZoneType",   60,  80),
+  ('T2_SECURITY_LANE_2',          'T2', 'Security Lane 2',         'SECURITY_LANE'::"ZoneType",   60,  80),
+  ('T2_IMMIGRATION',              'T2', 'Immigration T2',           'IMMIGRATION'::"ZoneType",    80,  75),
+  ('T2_RETAIL',                   'T2', 'Retail T2',               'RETAIL'::"ZoneType",         200,  85),
+  ('T2_GATE_C07',                 'T2', 'Gate C07',                'BOARDING_GATE'::"ZoneType",   80,  90),
+  ('T2_GATE_D11',                 'T2', 'Gate D11',                'BOARDING_GATE'::"ZoneType",  100,  90),
+  ('T2_CORRIDOR_POST_SECURITY',   'T2', 'Post-Security T2',        'CORRIDOR'::"ZoneType",       120,  80)
+ON CONFLICT (id) DO NOTHING;
+
+-- Zone configs (SECURITY_LANE gets tighter thresholds 15/20; others 20/30)
+INSERT INTO zone_configs (id, "zoneId", "forecastThreshold30", "forecastThreshold60", "sentinelZScore", "updatedAt") VALUES
+  (gen_random_uuid(), 'T1_SECURITY_LANE_1',        15, 20, 2.5, NOW()),
+  (gen_random_uuid(), 'T1_SECURITY_LANE_2',        15, 20, 2.5, NOW()),
+  (gen_random_uuid(), 'T1_SECURITY_LANE_3',        15, 20, 2.5, NOW()),
+  (gen_random_uuid(), 'T1_IMMIGRATION',            20, 30, 2.5, NOW()),
+  (gen_random_uuid(), 'T1_CHECKIN_A',              20, 30, 2.5, NOW()),
+  (gen_random_uuid(), 'T1_CHECKIN_B',              20, 30, 2.5, NOW()),
+  (gen_random_uuid(), 'T1_RETAIL_PLAZA',           20, 30, 2.5, NOW()),
+  (gen_random_uuid(), 'T1_GATE_A05',               20, 30, 2.5, NOW()),
+  (gen_random_uuid(), 'T1_GATE_A08',               20, 30, 2.5, NOW()),
+  (gen_random_uuid(), 'T1_GATE_A12',               20, 30, 2.5, NOW()),
+  (gen_random_uuid(), 'T1_GATE_B03',               20, 30, 2.5, NOW()),
+  (gen_random_uuid(), 'T1_GATE_B08',               20, 30, 2.5, NOW()),
+  (gen_random_uuid(), 'T1_CORRIDOR_POST_SECURITY', 20, 30, 2.5, NOW()),
+  (gen_random_uuid(), 'T1_CORRIDOR_PIER_A',        20, 30, 2.5, NOW()),
+  (gen_random_uuid(), 'T1_CORRIDOR_PIER_B',        20, 30, 2.5, NOW()),
+  (gen_random_uuid(), 'T1_BAGGAGE_A',              20, 30, 2.5, NOW()),
+  (gen_random_uuid(), 'T1_LANDSIDE',               20, 30, 2.5, NOW()),
+  (gen_random_uuid(), 'T2_CHECKIN_B',              20, 30, 2.5, NOW()),
+  (gen_random_uuid(), 'T2_SECURITY_LANE_1',        15, 20, 2.5, NOW()),
+  (gen_random_uuid(), 'T2_SECURITY_LANE_2',        15, 20, 2.5, NOW()),
+  (gen_random_uuid(), 'T2_IMMIGRATION',            20, 30, 2.5, NOW()),
+  (gen_random_uuid(), 'T2_RETAIL',                 20, 30, 2.5, NOW()),
+  (gen_random_uuid(), 'T2_GATE_C07',               20, 30, 2.5, NOW()),
+  (gen_random_uuid(), 'T2_GATE_D11',               20, 30, 2.5, NOW()),
+  (gen_random_uuid(), 'T2_CORRIDOR_POST_SECURITY', 20, 30, 2.5, NOW())
+ON CONFLICT ("zoneId") DO NOTHING;
+
+-- Zone mappings (Wi-Fi AP → Zone)
+INSERT INTO zone_mappings (id, "apLocationId", "zoneId", "terminalId") VALUES
+  (gen_random_uuid(), 'AP-T1-SEC-01', 'T1_SECURITY_LANE_1', 'T1'),
+  (gen_random_uuid(), 'AP-T1-SEC-02', 'T1_SECURITY_LANE_2', 'T1'),
+  (gen_random_uuid(), 'AP-T1-SEC-03', 'T1_SECURITY_LANE_3', 'T1'),
+  (gen_random_uuid(), 'AP-T1-CHK-01', 'T1_CHECKIN_A',       'T1'),
+  (gen_random_uuid(), 'AP-T1-CHK-02', 'T1_CHECKIN_B',       'T1'),
+  (gen_random_uuid(), 'AP-T1-IMG-01', 'T1_IMMIGRATION',     'T1'),
+  (gen_random_uuid(), 'AP-T2-SEC-01', 'T2_SECURITY_LANE_1', 'T2'),
+  (gen_random_uuid(), 'AP-T2-SEC-02', 'T2_SECURITY_LANE_2', 'T2'),
+  (gen_random_uuid(), 'AP-T2-CHK-01', 'T2_CHECKIN_B',       'T2')
+ON CONFLICT ("apLocationId") DO NOTHING;
+SEED_SQL
+
   print_ok "Database seeded (users, terminals, zones)"
 else
   print_ok "Database already migrated — skipping"
@@ -224,9 +302,9 @@ if command -v tmux &>/dev/null && [ -z "$TMUX" ]; then
   tmux new-session -d -s nexus -x 220 -y 50
 
   tmux rename-window -t nexus:0 "Nexus"
-  tmux send-keys -t nexus:0 "cd apps/api-gateway && DATABASE_URL='$DB_URL' npm run start:dev" Enter
+  tmux send-keys -t nexus:0 "cd apps/api-gateway && DATABASE_URL='$DATABASE_URL' npm run start:dev" Enter
   tmux split-window -t nexus:0 -h
-  tmux send-keys -t nexus:0 "cd apps/ingestor-service && TIMESCALE_URL='${TIMESCALE_URL:-postgresql://nexus_ts:timescale_secret@localhost:5433/nexus_timeseries}' REDIS_URL='${REDIS_URL:-redis://:redis_secret@localhost:6379}' KAFKA_BROKER='localhost:9092' npm run start:dev" Enter
+  tmux send-keys -t nexus:0 "cd apps/ingestor-service && TIMESCALE_URL='$TIMESCALE_URL' REDIS_URL='${REDIS_URL:-redis://:redis_secret@localhost:6379}' KAFKA_BROKER='localhost:9092' npm run start:dev" Enter
 
   echo ""
   echo -e "${GREEN}${BOLD}┌─────────────────────────────────────────────────┐${NC}"
