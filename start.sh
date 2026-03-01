@@ -100,6 +100,14 @@ docker compose up -d postgres timescaledb neo4j redis zookeeper kafka
 wait_for_service "PostgreSQL" \
   "docker exec nexus-postgres pg_isready -U ${POSTGRES_USER:-nexus}"
 
+# Fix PostgreSQL 15+ public schema privileges (safe to run on every startup)
+docker exec nexus-postgres psql \
+  -U "${POSTGRES_USER:-nexus}" \
+  -d "${POSTGRES_DB:-nexus}" \
+  -c "GRANT ALL ON SCHEMA public TO ${POSTGRES_USER:-nexus}; ALTER SCHEMA public OWNER TO ${POSTGRES_USER:-nexus};" \
+  &>/dev/null || true
+print_ok "PostgreSQL schema privileges verified"
+
 wait_for_service "TimescaleDB" \
   "docker exec nexus-timescale pg_isready -U ${TIMESCALE_USER:-nexus_ts}"
 
