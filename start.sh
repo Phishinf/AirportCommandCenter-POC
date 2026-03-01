@@ -149,24 +149,23 @@ MIGRATED=$(docker exec nexus-postgres psql -U ${POSTGRES_USER:-nexus} -d ${POSTG
   -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_name='users'" 2>/dev/null || echo "0")
 
 if [ "$MIGRATED" = "0" ]; then
-  echo "  Running Prisma migrations..."
+  # 1. Generate Prisma client FIRST (creates UserRole, ZoneType enums in node_modules)
+  echo "  Generating Prisma client..."
   (cd apps/api-gateway && DATABASE_URL="$DB_URL" \
-    npx prisma migrate deploy --schema "$SCHEMA_PATH" 2>&1 | tail -5)
-
-  # If no migrations folder yet, push the schema directly
-  (cd apps/api-gateway && DATABASE_URL="$DB_URL" \
-    npx prisma db push --schema "$SCHEMA_PATH" --accept-data-loss 2>&1 | tail -3)
-  print_ok "Prisma schema applied"
-
-  # Generate Prisma client
-  (cd apps/api-gateway && DATABASE_URL="$DB_URL" \
-    npx prisma generate --schema "$SCHEMA_PATH" 2>&1 | tail -2)
+    npx prisma generate --schema "$SCHEMA_PATH")
   print_ok "Prisma client generated"
 
+  # 2. Push schema to database (creates all tables)
+  echo "  Pushing schema to database..."
+  (cd apps/api-gateway && DATABASE_URL="$DB_URL" \
+    npx prisma db push --schema "$SCHEMA_PATH" --accept-data-loss)
+  print_ok "Prisma schema applied"
+
+  # 3. Seed with initial data
   echo "  Seeding database..."
   (cd apps/api-gateway && DATABASE_URL="$DB_URL" \
     npx ts-node --compiler-options '{"module":"commonjs","esModuleInterop":true}' \
-    src/seed.ts 2>&1)
+    src/seed.ts)
   print_ok "Database seeded (users, terminals, zones)"
 else
   print_ok "Database already migrated — skipping"
