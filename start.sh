@@ -98,7 +98,7 @@ docker compose up -d postgres timescaledb neo4j redis zookeeper kafka
 
 # Wait for each service
 wait_for_service "PostgreSQL" \
-  "docker exec nexus-postgres pg_isready -U postgres"
+  "docker exec nexus-postgres psql -U postgres -d nexus -c 'SELECT 1' -q"
 
 wait_for_service "TimescaleDB" \
   "docker exec nexus-timescale pg_isready -U ${TIMESCALE_USER:-nexus_ts}"
