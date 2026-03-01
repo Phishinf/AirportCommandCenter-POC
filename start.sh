@@ -150,124 +150,40 @@ install_deps "apps/ingestor-service"  "Ingestor Service"
 
 print_step "5/7" "Running database migrations & seed"
 
-# DATABASE_URL is loaded from .env.local above (Supabase remote connection string)
-TIMESCALE_URL="postgresql://nexus_ts:timescale_secret@localhost:5433/nexus_timeseries"
+# DATABASE_URL / DIRECT_URL loaded from .env.local above (Supabase remote)
 SCHEMA_PATH="../../libs/database/src/prisma/schema.prisma"
 
-# Use the LOCAL Prisma binary — never the global one (avoids Prisma 7 conflicts)
+# Use the LOCAL Prisma / ts-node binaries — never the global ones
 PRISMA="./node_modules/.bin/prisma"
 TS_NODE="./node_modules/.bin/ts-node"
 
-# Check if already migrated (psql connects directly to Supabase)
-MIGRATED=$(psql "$DATABASE_URL" -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_name='users'" 2>/dev/null || echo "0")
+# Check if already migrated — uses pg from api-gateway/node_modules (no psql needed)
+MIGRATED=$(cd apps/api-gateway && node -e "
+const { Pool } = require('pg');
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+pool.query(\"SELECT COUNT(*) AS c FROM information_schema.tables WHERE table_schema='public' AND table_name='users'\")
+  .then(r => { process.stdout.write(r.rows[0].c); pool.end(); })
+  .catch(() => { process.stdout.write('0'); pool.end(); });
+" 2>/dev/null || echo "0")
 
 if [ "$MIGRATED" = "0" ]; then
   # 1. Generate Prisma client FIRST (creates UserRole, ZoneType enums in node_modules)
   echo "  Generating Prisma client..."
-  (cd apps/api-gateway && DATABASE_URL="$DATABASE_URL" \
+  (cd apps/api-gateway && DATABASE_URL="$DATABASE_URL" DIRECT_URL="$DIRECT_URL" \
     $PRISMA generate --schema "$SCHEMA_PATH")
   print_ok "Prisma client generated"
 
-  # 2. Push schema directly to Supabase (no intermediate SQL file needed)
+  # 2. Push schema directly to Supabase (idempotent, no psql needed)
   echo "  Pushing schema to Supabase..."
-  (cd apps/api-gateway && DATABASE_URL="$DATABASE_URL" \
+  (cd apps/api-gateway && DATABASE_URL="$DATABASE_URL" DIRECT_URL="$DIRECT_URL" \
     $PRISMA db push --schema "$SCHEMA_PATH")
   print_ok "Schema applied"
 
-  # 3. Seed with initial data — pure SQL inside the container (no Prisma Client, no host networking)
+  # 3. Seed using the Prisma seed script (ts-node, no psql needed)
   echo "  Seeding database..."
-
-  # Compute SHA-256 password hash using Node.js (same algorithm as seed.ts)
-  PW_HASH=$(node -e "const c=require('crypto');process.stdout.write(c.createHash('sha256').update('nexus2024!').digest('hex'))")
-
-  psql "$DATABASE_URL" << SEED_SQL
--- Terminals
-INSERT INTO terminals (id, name, "isActive") VALUES
-  ('T1', 'Terminal 1', true),
-  ('T2', 'Terminal 2', true)
-ON CONFLICT (id) DO NOTHING;
-
--- Users
-INSERT INTO users (id, email, "passwordHash", role, "terminalId", "isActive", "createdAt", "updatedAt") VALUES
-  (gen_random_uuid(), 'admin@nexus.airport',    '$PW_HASH', 'ADMIN'::"UserRole",      NULL, true, NOW(), NOW()),
-  (gen_random_uuid(), 'ops@nexus.airport',       '$PW_HASH', 'OPERATIONS'::"UserRole", NULL, true, NOW(), NOW()),
-  (gen_random_uuid(), 'security@nexus.airport',  '$PW_HASH', 'SECURITY'::"UserRole",   'T1', true, NOW(), NOW()),
-  (gen_random_uuid(), 'terminal@nexus.airport',  '$PW_HASH', 'TERMINAL'::"UserRole",   'T1', true, NOW(), NOW()),
-  (gen_random_uuid(), 'airline@nexus.airport',   '$PW_HASH', 'AIRLINE'::"UserRole",    NULL, true, NOW(), NOW())
-ON CONFLICT (email) DO NOTHING;
-
--- Zones
-INSERT INTO zones (id, "terminalId", name, type, "capacityMax", "alertThresholdPct") VALUES
-  ('T1_SECURITY_LANE_1',          'T1', 'Security Lane 1',        'SECURITY_LANE'::"ZoneType",   60,  80),
-  ('T1_SECURITY_LANE_2',          'T1', 'Security Lane 2',        'SECURITY_LANE'::"ZoneType",   60,  80),
-  ('T1_SECURITY_LANE_3',          'T1', 'Security Lane 3',        'SECURITY_LANE'::"ZoneType",   60,  80),
-  ('T1_IMMIGRATION',              'T1', 'Immigration T1',          'IMMIGRATION'::"ZoneType",     80,  75),
-  ('T1_CHECKIN_A',                'T1', 'Check-in Zone A',         'CHECK_IN'::"ZoneType",       200,  70),
-  ('T1_CHECKIN_B',                'T1', 'Check-in Zone B',         'CHECK_IN'::"ZoneType",       180,  70),
-  ('T1_RETAIL_PLAZA',             'T1', 'Retail Plaza T1',         'RETAIL'::"ZoneType",         300,  85),
-  ('T1_GATE_A05',                 'T1', 'Gate A05',                'BOARDING_GATE'::"ZoneType",   80,  90),
-  ('T1_GATE_A08',                 'T1', 'Gate A08',                'BOARDING_GATE'::"ZoneType",   80,  90),
-  ('T1_GATE_A12',                 'T1', 'Gate A12',                'BOARDING_GATE'::"ZoneType",  100,  90),
-  ('T1_GATE_B03',                 'T1', 'Gate B03',                'BOARDING_GATE'::"ZoneType",   80,  90),
-  ('T1_GATE_B08',                 'T1', 'Gate B08',                'BOARDING_GATE'::"ZoneType",  120,  90),
-  ('T1_CORRIDOR_POST_SECURITY',   'T1', 'Post-Security Corridor',  'CORRIDOR'::"ZoneType",       150,  80),
-  ('T1_CORRIDOR_PIER_A',          'T1', 'Pier A Corridor',         'CORRIDOR'::"ZoneType",       100,  80),
-  ('T1_CORRIDOR_PIER_B',          'T1', 'Pier B Corridor',         'CORRIDOR'::"ZoneType",       100,  80),
-  ('T1_BAGGAGE_A',                'T1', 'Baggage Reclaim A',       'BAGGAGE_RECLAIM'::"ZoneType",100,  85),
-  ('T1_LANDSIDE',                 'T1', 'T1 Landside',             'LANDSIDE'::"ZoneType",       400,  70),
-  ('T2_CHECKIN_B',                'T2', 'Check-in Zone B',         'CHECK_IN'::"ZoneType",       160,  70),
-  ('T2_SECURITY_LANE_1',          'T2', 'Security Lane 1',         'SECURITY_LANE'::"ZoneType",   60,  80),
-  ('T2_SECURITY_LANE_2',          'T2', 'Security Lane 2',         'SECURITY_LANE'::"ZoneType",   60,  80),
-  ('T2_IMMIGRATION',              'T2', 'Immigration T2',           'IMMIGRATION'::"ZoneType",    80,  75),
-  ('T2_RETAIL',                   'T2', 'Retail T2',               'RETAIL'::"ZoneType",         200,  85),
-  ('T2_GATE_C07',                 'T2', 'Gate C07',                'BOARDING_GATE'::"ZoneType",   80,  90),
-  ('T2_GATE_D11',                 'T2', 'Gate D11',                'BOARDING_GATE'::"ZoneType",  100,  90),
-  ('T2_CORRIDOR_POST_SECURITY',   'T2', 'Post-Security T2',        'CORRIDOR'::"ZoneType",       120,  80)
-ON CONFLICT (id) DO NOTHING;
-
--- Zone configs (SECURITY_LANE gets tighter thresholds 15/20; others 20/30)
-INSERT INTO zone_configs (id, "zoneId", "forecastThreshold30", "forecastThreshold60", "sentinelZScore", "updatedAt") VALUES
-  (gen_random_uuid(), 'T1_SECURITY_LANE_1',        15, 20, 2.5, NOW()),
-  (gen_random_uuid(), 'T1_SECURITY_LANE_2',        15, 20, 2.5, NOW()),
-  (gen_random_uuid(), 'T1_SECURITY_LANE_3',        15, 20, 2.5, NOW()),
-  (gen_random_uuid(), 'T1_IMMIGRATION',            20, 30, 2.5, NOW()),
-  (gen_random_uuid(), 'T1_CHECKIN_A',              20, 30, 2.5, NOW()),
-  (gen_random_uuid(), 'T1_CHECKIN_B',              20, 30, 2.5, NOW()),
-  (gen_random_uuid(), 'T1_RETAIL_PLAZA',           20, 30, 2.5, NOW()),
-  (gen_random_uuid(), 'T1_GATE_A05',               20, 30, 2.5, NOW()),
-  (gen_random_uuid(), 'T1_GATE_A08',               20, 30, 2.5, NOW()),
-  (gen_random_uuid(), 'T1_GATE_A12',               20, 30, 2.5, NOW()),
-  (gen_random_uuid(), 'T1_GATE_B03',               20, 30, 2.5, NOW()),
-  (gen_random_uuid(), 'T1_GATE_B08',               20, 30, 2.5, NOW()),
-  (gen_random_uuid(), 'T1_CORRIDOR_POST_SECURITY', 20, 30, 2.5, NOW()),
-  (gen_random_uuid(), 'T1_CORRIDOR_PIER_A',        20, 30, 2.5, NOW()),
-  (gen_random_uuid(), 'T1_CORRIDOR_PIER_B',        20, 30, 2.5, NOW()),
-  (gen_random_uuid(), 'T1_BAGGAGE_A',              20, 30, 2.5, NOW()),
-  (gen_random_uuid(), 'T1_LANDSIDE',               20, 30, 2.5, NOW()),
-  (gen_random_uuid(), 'T2_CHECKIN_B',              20, 30, 2.5, NOW()),
-  (gen_random_uuid(), 'T2_SECURITY_LANE_1',        15, 20, 2.5, NOW()),
-  (gen_random_uuid(), 'T2_SECURITY_LANE_2',        15, 20, 2.5, NOW()),
-  (gen_random_uuid(), 'T2_IMMIGRATION',            20, 30, 2.5, NOW()),
-  (gen_random_uuid(), 'T2_RETAIL',                 20, 30, 2.5, NOW()),
-  (gen_random_uuid(), 'T2_GATE_C07',               20, 30, 2.5, NOW()),
-  (gen_random_uuid(), 'T2_GATE_D11',               20, 30, 2.5, NOW()),
-  (gen_random_uuid(), 'T2_CORRIDOR_POST_SECURITY', 20, 30, 2.5, NOW())
-ON CONFLICT ("zoneId") DO NOTHING;
-
--- Zone mappings (Wi-Fi AP → Zone)
-INSERT INTO zone_mappings (id, "apLocationId", "zoneId", "terminalId") VALUES
-  (gen_random_uuid(), 'AP-T1-SEC-01', 'T1_SECURITY_LANE_1', 'T1'),
-  (gen_random_uuid(), 'AP-T1-SEC-02', 'T1_SECURITY_LANE_2', 'T1'),
-  (gen_random_uuid(), 'AP-T1-SEC-03', 'T1_SECURITY_LANE_3', 'T1'),
-  (gen_random_uuid(), 'AP-T1-CHK-01', 'T1_CHECKIN_A',       'T1'),
-  (gen_random_uuid(), 'AP-T1-CHK-02', 'T1_CHECKIN_B',       'T1'),
-  (gen_random_uuid(), 'AP-T1-IMG-01', 'T1_IMMIGRATION',     'T1'),
-  (gen_random_uuid(), 'AP-T2-SEC-01', 'T2_SECURITY_LANE_1', 'T2'),
-  (gen_random_uuid(), 'AP-T2-SEC-02', 'T2_SECURITY_LANE_2', 'T2'),
-  (gen_random_uuid(), 'AP-T2-CHK-01', 'T2_CHECKIN_B',       'T2')
-ON CONFLICT ("apLocationId") DO NOTHING;
-SEED_SQL
-
+  (cd apps/api-gateway && DATABASE_URL="$DATABASE_URL" DIRECT_URL="$DIRECT_URL" \
+    $TS_NODE --compiler-options '{"module":"commonjs","esModuleInterop":true}' \
+    ../../libs/database/src/prisma/seed.ts)
   print_ok "Database seeded (users, terminals, zones)"
 else
   print_ok "Database already migrated — skipping"
