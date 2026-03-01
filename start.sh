@@ -173,11 +173,17 @@ if [ "$MIGRATED" = "0" ]; then
     $PRISMA generate --schema "$SCHEMA_PATH")
   print_ok "Prisma client generated"
 
-  # 2. Push schema to database (creates all tables)
-  echo "  Pushing schema to database..."
-  (cd apps/api-gateway && DATABASE_URL="$DB_URL" \
-    $PRISMA db push --schema "$SCHEMA_PATH" --accept-data-loss)
-  print_ok "Prisma schema applied"
+  # 2. Generate SQL from schema (no DB connection needed) then apply INSIDE the container
+  #    This bypasses macOS Docker Desktop host→localhost networking issues entirely
+  echo "  Generating schema SQL..."
+  (cd apps/api-gateway && $PRISMA migrate diff \
+    --from-empty \
+    --to-schema-datamodel "$SCHEMA_PATH" \
+    --script > /tmp/nexus-schema.sql 2>/dev/null)
+
+  echo "  Applying schema inside container..."
+  docker exec -i nexus-postgres psql -U postgres -d nexus < /tmp/nexus-schema.sql
+  print_ok "Schema applied"
 
   # 3. Seed with initial data
   echo "  Seeding database..."
