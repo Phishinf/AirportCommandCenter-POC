@@ -124,6 +124,18 @@ print_step "4/7" "Installing Node.js dependencies"
 install_deps() {
   local dir=$1
   local name=$2
+  local expected_prisma_ver="5.22.0"
+
+  # Force reinstall if Prisma version is wrong (e.g. global Prisma 7 was cached)
+  if [ -d "$dir/node_modules" ]; then
+    local installed_ver
+    installed_ver=$("$dir/node_modules/.bin/prisma" --version 2>/dev/null | awk '/prisma/{print $NF}' || echo "unknown")
+    if [[ "$installed_ver" != "$expected_prisma_ver"* ]]; then
+      print_warn "${name}: found Prisma $installed_ver, need $expected_prisma_ver — reinstalling..."
+      rm -rf "$dir/node_modules"
+    fi
+  fi
+
   if [ ! -d "$dir/node_modules" ]; then
     echo -n "  Installing ${name} dependencies..."
     (cd "$dir" && npm install --silent)
@@ -144,6 +156,10 @@ print_step "5/7" "Running database migrations & seed"
 DB_URL="postgresql://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_secret}@localhost:5432/${POSTGRES_DB:-nexus}"
 SCHEMA_PATH="../../libs/database/src/prisma/schema.prisma"
 
+# Use the LOCAL Prisma binary — never the global one (avoids Prisma 7 conflicts)
+PRISMA="./node_modules/.bin/prisma"
+TS_NODE="./node_modules/.bin/ts-node"
+
 # Check if already migrated
 MIGRATED=$(docker exec nexus-postgres psql -U ${POSTGRES_USER:-nexus} -d ${POSTGRES_DB:-nexus} \
   -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_name='users'" 2>/dev/null || echo "0")
@@ -152,19 +168,19 @@ if [ "$MIGRATED" = "0" ]; then
   # 1. Generate Prisma client FIRST (creates UserRole, ZoneType enums in node_modules)
   echo "  Generating Prisma client..."
   (cd apps/api-gateway && DATABASE_URL="$DB_URL" \
-    npx prisma generate --schema "$SCHEMA_PATH")
+    $PRISMA generate --schema "$SCHEMA_PATH")
   print_ok "Prisma client generated"
 
   # 2. Push schema to database (creates all tables)
   echo "  Pushing schema to database..."
   (cd apps/api-gateway && DATABASE_URL="$DB_URL" \
-    npx prisma db push --schema "$SCHEMA_PATH" --accept-data-loss)
+    $PRISMA db push --schema "$SCHEMA_PATH" --accept-data-loss)
   print_ok "Prisma schema applied"
 
   # 3. Seed with initial data
   echo "  Seeding database..."
   (cd apps/api-gateway && DATABASE_URL="$DB_URL" \
-    npx ts-node --compiler-options '{"module":"commonjs","esModuleInterop":true}' \
+    $TS_NODE --compiler-options '{"module":"commonjs","esModuleInterop":true}' \
     src/seed.ts)
   print_ok "Database seeded (users, terminals, zones)"
 else
