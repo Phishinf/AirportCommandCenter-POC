@@ -11,19 +11,19 @@ The system is split into three logical tiers:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  EDGE TIER (Airport Network)                                 │
+│  EDGE TIER (Airport Network)                                │
 │  XOVIS Sensors · Ipsotek Cameras · Wi-Fi APs · AODB · FIDS  │
 └───────────────────────────┬─────────────────────────────────┘
                             │ Kafka Ingestion
 ┌───────────────────────────▼─────────────────────────────────┐
-│  PROCESSING TIER (On-Prem or Private Cloud)                  │
-│  Ingestor Service · Analytics Engine · Notification Service  │
-│  TimescaleDB · Neo4j · PostgreSQL · Redis                    │
+│  PROCESSING TIER (On-Prem or Private Cloud)                 │
+│  Ingestor Service · Analytics Engine · Notification Service │
+│  TimescaleDB · Neo4j · PostgreSQL · Redis                   │
 └───────────────────────────┬─────────────────────────────────┘
                             │ REST / WebSocket
 ┌───────────────────────────▼─────────────────────────────────┐
-│  PRESENTATION TIER (Public Cloud / CDN)                      │
-│  Next.js Frontend · API Gateway · Auth                       │
+│  PRESENTATION TIER (Public Cloud / CDN)                     │
+│  Next.js Frontend · API Gateway · Auth                      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
