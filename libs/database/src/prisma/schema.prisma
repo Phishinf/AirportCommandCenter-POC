@@ -1,0 +1,126 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../../../../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Users & Roles ────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  role         UserRole
+  terminalId   String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  auditLogs    AuditLog[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  OPERATIONS
+  SECURITY
+  TERMINAL
+  AIRLINE
+}
+
+// ─── Airport Configuration ────────────────────────────────────────────────────
+
+model Terminal {
+  id       String  @id
+  name     String
+  isActive Boolean @default(true)
+  zones    Zone[]
+
+  @@map("terminals")
+}
+
+model Zone {
+  id                String      @id
+  terminalId        String
+  terminal          Terminal    @relation(fields: [terminalId], references: [id])
+  name              String
+  type              ZoneType
+  capacityMax       Int
+  alertThresholdPct Int         @default(80)
+  zoneConfig        ZoneConfig?
+
+  @@map("zones")
+}
+
+enum ZoneType {
+  SECURITY_LANE
+  IMMIGRATION
+  BAGGAGE_RECLAIM
+  BOARDING_GATE
+  CORRIDOR
+  CHECK_IN
+  LANDSIDE
+  RETAIL
+}
+
+model ZoneConfig {
+  id                  String   @id @default(uuid())
+  zoneId              String   @unique
+  zone                Zone     @relation(fields: [zoneId], references: [id])
+  forecastThreshold30 Int
+  forecastThreshold60 Int
+  sentinelZScore      Float    @default(2.5)
+  updatedAt           DateTime @updatedAt
+
+  @@map("zone_configs")
+}
+
+model ZoneMapping {
+  id           String @id @default(uuid())
+  apLocationId String @unique
+  zoneId       String
+  terminalId   String
+
+  @@map("zone_mappings")
+}
+
+// ─── Alerts & Audit ───────────────────────────────────────────────────────────
+
+model Alert {
+  id          String        @id @default(uuid())
+  anomalyId   String        @unique
+  zoneId      String
+  terminalId  String
+  anomalyType String
+  severity    AlertSeverity
+  detectedAt  DateTime
+  resolvedAt  DateTime?
+  resolvedBy  String?
+  description String
+  isActive    Boolean       @default(true)
+
+  @@map("alerts")
+}
+
+enum AlertSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  action    String
+  resource  String
+  payload   Json?
+  timestamp DateTime @default(now())
+
+  @@map("audit_logs")
+}
