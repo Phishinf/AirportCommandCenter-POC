@@ -154,7 +154,7 @@ install_deps "apps/ingestor-service"  "Ingestor Service"
 print_step "5/7" "Running database migrations & seed"
 
 # Use postgres superuser — guaranteed full access, no permission issues
-DB_URL="postgresql://postgres:${POSTGRES_ROOT_PASSWORD:-postgres_root}@localhost:5432/${POSTGRES_DB:-nexus}"
+DB_URL="postgresql://postgres:${POSTGRES_PASSWORD:-nexus2024}@localhost:5432/${POSTGRES_DB:-nexus}"
 SCHEMA_PATH="../../libs/database/src/prisma/schema.prisma"
 
 # Use the LOCAL Prisma binary — never the global one (avoids Prisma 7 conflicts)
