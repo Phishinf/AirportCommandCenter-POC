@@ -18,12 +18,12 @@ Kafka Raw Topics (raw.wifi / raw.xovis / raw.ipsotek / raw.aodb / raw.fids)
 Ingestor Agent → Kafka (events.flow) → TimescaleDB (flow_metrics)
      │
      ├─────────────────────┐
-     │ (3a) Prediction      │ (3b) Anomaly Detection
+     │ (3a) Prediction     │ (3b) Anomaly Detection
      ▼                     ▼
 Prophet Agent         Sentinel Agent
      │                     │
-     │ events.threshold     │ events.anomaly
-     └──────────┬───────────┘
+     │ events.threshold    │ events.anomaly
+     └──────────┬──────────┘
                 │
                 │ (4) Decision Support
                 ▼
