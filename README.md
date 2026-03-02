@@ -48,14 +48,14 @@ Nexus is structured as a **three-tier, event-driven microservices monorepo**.
 ┌───────────────────────────▼─────────────────────────────────────┐
 │  PROCESSING TIER  (Docker / On-Prem)                            │
 │                                                                 │
-│  ┌──────────────────┐  ┌──────────────────┐                     │
+│  ┌──────────────────┐  ┌─────────────────-─┐                    │
 │  │ Ingestor Service │  │ Analytics Engine  │                    │
 │  │ (port 4001)      │  │ (port 4002)       │                    │
-│  │                  │  │                  │                     │
+│  │                  │  │                   │                    │
 │  │ • Kafka consumer │  │ • Sentinel Agent  │                    │
 │  │ • Data normalise │  │ • Prophet Agent   │                    │
 │  │ • TimescaleDB wr │  │ • Dispatcher Agent│                    │
-│  └──────────────────┘  └──────────────────┘                     │
+│  └──────────────────┘  └──────────────────-┘                    │
 │                                                                 │
 │  ┌──────────────────┐  ┌──────────────────────────────────────┐ │
 │  │ Notification Svc │  │  Infrastructure                      │ │
