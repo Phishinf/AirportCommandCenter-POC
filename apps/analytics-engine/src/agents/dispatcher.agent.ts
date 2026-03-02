@@ -1,8 +1,7 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { Redis } from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
-import { AnomalyEvent } from '../../../../../../libs/common/src/interfaces/anomaly-event.interface';
-import { ScenarioRecommendation } from '../../../../../../libs/common/src/interfaces/scenario-recommendation.interface';
+import { AnomalyEvent, ScenarioRecommendation } from '@nexus/common';
 
 export const DISPATCHER_REDIS_TOKEN = 'DISPATCHER_REDIS';
 
