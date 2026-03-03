@@ -11,7 +11,7 @@ Nexus is an enterprise-grade, AI-driven platform that delivers a real-time unifi
 
 The platform combines three foundational concepts:
 - **Nexus UPFOP** — real-time airport operational intelligence
-- **AI Workflow 53** — structured role-based multi-agent governance
+- **AI Workflow** — structured role-based multi-agent governance
 - **Intelligent AI Delegation** (Google DeepMind, 2026) — adaptive, accountable, verifiable agent orchestration
 
 ---
