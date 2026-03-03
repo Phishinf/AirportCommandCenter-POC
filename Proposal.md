@@ -48,9 +48,9 @@ The Director orchestrator monitors all agent channels, issues corrective directi
 
 Nexus extends its multi-agent architecture with an intelligent delegation layer. The Director agent decomposes complex operational objectives — crowd management, queue forecasting, security event response — into verifiable sub-tasks matched to specialist agents.
 
-Delegation follows a contract-first principle: subtasks are assigned only when outcomes can be formally verified. Trust calibration governs autonomy levels — high-criticality irreversible actions (security alerts, evacuation triggers) are gated by human-in-the-loop approval, while routine forecasting runs autonomously. Adaptive coordination handles runtime triggers (flight delays, sensor failures, agent degradation) without requiring a full workflow restart.
-
 Role-based views map to AI Workflow's operator and specialist panel model, ensuring accountability chains are explicit and auditable across every delegated decision.
+
+Delegation follows a contract-first principle: subtasks are assigned only when outcomes can be formally verified. Trust calibration governs autonomy levels — high-criticality irreversible actions (security alerts, evacuation triggers) are gated by human-in-the-loop approval, while routine forecasting runs autonomously. Adaptive coordination handles runtime triggers (flight delays, sensor failures, agent degradation) without requiring a full workflow restart.
 
 ---
 
