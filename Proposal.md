@@ -50,7 +50,7 @@ Nexus extends its multi-agent architecture with an intelligent delegation layer.
 
 Delegation follows a contract-first principle: subtasks are assigned only when outcomes can be formally verified. Trust calibration governs autonomy levels — high-criticality irreversible actions (security alerts, evacuation triggers) are gated by human-in-the-loop approval, while routine forecasting runs autonomously. Adaptive coordination handles runtime triggers (flight delays, sensor failures, agent degradation) without requiring a full workflow restart.
 
-Role-based views map to AI Workflow 53's consultant and specialist panel model, ensuring accountability chains are explicit and auditable across every delegated decision.
+Role-based views map to AI Workflow's operator and specialist panel model, ensuring accountability chains are explicit and auditable across every delegated decision.
 
 ---
 
@@ -160,7 +160,7 @@ The Director agent continuously monitors all specialist channels, firing correct
 ## 13. Target KPIs
 
 - Queue wait time reduction: **15–20%**
-- Retail dwell time increase via optimised passenger flow routing
+- Retail dwell time increases via optimised passenger flow routing
 - Incident response time reduction via automated AI alerting
 - Full audit trail coverage across all delegated agent decisions
 
@@ -168,7 +168,7 @@ The Director agent continuously monitors all specialist channels, firing correct
 
 ## 14. Compliance & Privacy
 
-All passenger tracking is anonymised at ingestion — no PII stored or transmitted. Differential privacy techniques applied to aggregate flow models. System operates within airport IT governance, cybersecurity, and data protection frameworks. GDPR and local data protection regulations respected by design.
+All passenger tracking is anonymised at ingestion — no PII stored or transmitted. Differential privacy techniques applied to aggregate flow models. System operates within airport IT governance, cybersecurity, and data protection frameworks. GDPR and local data protection regulations are respected by design.
 
 ---
 
